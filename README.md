@@ -33,7 +33,7 @@ Requires a browser with WebGL2 (Chrome, Edge, Firefox).
 ## Export
 
 - **PNG** up to 3840×2160, rendered offscreen at full quality.
-- **Video** (WebM VP9/VP8, MP4 where supported) recorded at 60 fps for 1–4 loops.
+- **Video** (WebM VP8/VP9) rendered frame-by-frame at 30 fps for 1–4 loops. Uses manual canvas capture instead of realtime 60 fps streaming, which avoids browser crashes on heavy WebGL shaders.
 - **GIF** rendered deterministically frame by frame, encoded in-page with a dependency-free GIF89a encoder (median-cut palette + ordered dithering), infinite loop flag set.
 
 ## Files

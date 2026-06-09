@@ -54,13 +54,13 @@ var Exporter = (function () {
     }, "image/png");
   }
 
-  /* ---------- Video (realtime capture) ---------- */
+  /* ---------- Video (deterministic frame capture — avoids captureStream(60) crashes) ---------- */
   function pickVideoMime() {
+    /* VP8 first: most stable for canvas capture on Chrome/Edge */
     var candidates = [
-      "video/webm;codecs=vp9",
       "video/webm;codecs=vp8",
-      "video/webm",
-      "video/mp4"
+      "video/webm;codecs=vp9",
+      "video/webm"
     ];
     for (var i = 0; i < candidates.length; i++) {
       if (window.MediaRecorder && MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
@@ -68,49 +68,98 @@ var Exporter = (function () {
     return null;
   }
 
+  function recorderOptions(mime, w, h) {
+    var px = w * h;
+    var bps = px >= 1920 * 1080 ? 6000000 : px >= 1280 * 720 ? 4000000 : 2500000;
+    return { mimeType: mime, videoBitsPerSecond: bps };
+  }
+
   function exportVideo(P, aspect) {
     if (busy) return;
+    if (!window.MediaRecorder) { UI.toast("Video recording not supported in this browser"); return; }
     var mime = pickVideoMime();
     if (!mime) { UI.toast("Video recording not supported in this browser"); return; }
     busy = true;
 
     var prev = Engine.size();
+    var wasPlaying = Engine.isPlaying();
     var h = parseInt(P.vidRes, 10);
     var w = evenRound(h * aspect);
+    var fps = 30;
+    var loops = parseInt(P.vidLoops, 10) || 1;
+    var totalSec = P.loop * loops;
+    var nFrames = Math.max(2, Math.round(totalSec * fps));
+    var frameMs = 1000 / fps;
+    var ext = "webm";
+
+    Engine.suspend();
+    Engine.setPlaying(false);
     Engine.setSize(w, h);
+    showOverlay("Rendering video");
 
-    var wasPlaying = Engine.isPlaying();
-    Engine.setPlaying(true);
-    Engine.resetTime();
+    var canvas = Engine.canvas();
+    var stream = canvas.captureStream(0);
+    var track = stream.getVideoTracks()[0];
+    var rec;
+    try {
+      rec = new MediaRecorder(stream, recorderOptions(mime, w, h));
+    } catch (err) {
+      try {
+        rec = new MediaRecorder(stream, { mimeType: mime });
+      } catch (err2) {
+        finishVideo(prev, wasPlaying, null, w, h, ext, 0);
+        UI.toast("Video recording failed: " + (err2.message || "unsupported codec"));
+        return;
+      }
+    }
 
-    var durMs = P.loop * P.vidLoops * 1000;
-    var ext = mime.indexOf("mp4") >= 0 ? "mp4" : "webm";
-    showOverlay("Recording video");
-
-    var stream = Engine.canvas().captureStream(60);
-    var rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 18000000 });
     var parts = [];
-    rec.ondataavailable = function (e) { if (e.data.size) parts.push(e.data); };
+    rec.ondataavailable = function (e) { if (e.data && e.data.size) parts.push(e.data); };
+    rec.onerror = function () {
+      cancelled = true;
+      try { rec.stop(); } catch (ignore) {}
+      finishVideo(prev, wasPlaying, null, w, h, ext, totalSec);
+      UI.toast("Video recording failed");
+    };
     rec.onstop = function () {
-      Engine.setSize(prev[0], prev[1]);
-      Engine.setPlaying(wasPlaying);
+      finishVideo(prev, wasPlaying, parts.length ? new Blob(parts, { type: mime }) : null, w, h, ext, totalSec);
+    };
+
+    rec.start(250);
+    var finished = false;
+    captureVideoFrames(0);
+
+    function finishVideo(prevSize, resumePlaying, blob, width, height, extension, seconds) {
+      if (finished) return;
+      finished = true;
+      Engine.setSize(prevSize[0], prevSize[1]);
+      Engine.setPlaying(resumePlaying);
+      Engine.resume();
       hideOverlay();
       busy = false;
-      if (!cancelled) {
-        download(new Blob(parts, { type: mime }), stamp(P, ext));
-        UI.toast("Saved " + (durMs / 1000).toFixed(1) + "s " + ext.toUpperCase() + " (" + w + "\u00d7" + h + ")");
+      if (blob && !cancelled) {
+        download(blob, stamp(P, extension));
+        UI.toast("Saved " + seconds.toFixed(1) + "s " + extension.toUpperCase() + " (" + width + "\u00d7" + height + ")");
       }
-    };
-    rec.start(200);
+    }
 
-    var t0 = performance.now();
-    (function poll() {
-      var el = performance.now() - t0;
-      if (cancelled) { rec.stop(); return; }
-      setProgress(Math.min(el / durMs, 1), (el / 1000).toFixed(1) + "s / " + (durMs / 1000).toFixed(1) + "s \u00b7 " + w + "\u00d7" + h);
-      if (el >= durMs) { rec.stop(); return; }
-      requestAnimationFrame(poll);
-    })();
+    function captureVideoFrames(f) {
+      if (cancelled || f >= nFrames) {
+        try { rec.stop(); } catch (ignore) {}
+        return;
+      }
+
+      var t = f / fps;
+      var phase = (t % P.loop) / P.loop;
+      Engine.setLoopTime(t % P.loop);
+      Engine.renderAt(phase);
+      if (track && track.requestFrame) track.requestFrame();
+
+      setProgress((f + 1) / nFrames,
+        "frame " + (f + 1) + "/" + nFrames + " \u00b7 " + w + "\u00d7" + h + " @ " + fps + "fps");
+
+      setTimeout(function () { captureVideoFrames(f + 1); }, frameMs);
+    }
   }
 
   /* ---------- GIF (offline, deterministic, perfect loop) ---------- */

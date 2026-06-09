@@ -4,6 +4,7 @@
 var Engine = (function () {
   var canvas, gl, program, uniforms = {};
   var playing = true;
+  var suspended = false;
   var loopT = 0;            // seconds into current loop
   var lastTick = 0;
   var fps = 60, fpsAcc = 0, fpsN = 0, fpsCb = null;
@@ -119,6 +120,8 @@ var Engine = (function () {
   }
 
   function tick(now) {
+    if (suspended) return;
+
     var dt = Math.min((now - lastTick) / 1000, 0.1);
     lastTick = now;
 
@@ -157,6 +160,13 @@ var Engine = (function () {
     readPixels: readPixels,
     currentPhase: currentPhase,
     resetTime: function () { loopT = 0; },
+    setLoopTime: function (t) { loopT = t; },
+    suspend: function () { suspended = true; },
+    resume: function () {
+      suspended = false;
+      lastTick = performance.now();
+      requestAnimationFrame(tick);
+    },
     setPlaying: function (v) { playing = v; lastTick = performance.now(); },
     isPlaying: function () { return playing; },
     onFps: function (cb) { fpsCb = cb; },
