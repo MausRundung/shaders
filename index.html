@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LUMEN — Generative Shader Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="brand-mark" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M10 1 L19 10 L10 19 L1 10 Z" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M10 5.5 L14.5 10 L10 14.5 L5.5 10 Z" fill="currentColor"/>
+    </svg>
+    <span class="brand-name">LUMEN</span>
+    <span class="brand-sub">generative shader studio</span>
+  </div>
+
+  <div class="topbar-center">
+    <div class="segmented" id="aspect-seg" role="group" aria-label="Canvas aspect ratio"></div>
+  </div>
+
+  <div class="topbar-actions">
+    <button class="btn btn-primary" id="btn-random" title="Randomize everything (R)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5.4" cy="5.4" r="1.25" fill="currentColor"/><circle cx="10.6" cy="10.6" r="1.25" fill="currentColor"/><circle cx="10.6" cy="5.4" r="1.25" fill="currentColor"/><circle cx="5.4" cy="10.6" r="1.25" fill="currentColor"/></svg>
+      Randomize
+    </button>
+    <div class="topbar-divider"></div>
+    <button class="btn" id="btn-export-png" title="Save still image (S)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5.5" cy="5.5" r="1.5" fill="currentColor"/><path d="M2 12 L6 8 L9 11 L11.5 8.5 L14 11" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      Image
+    </button>
+    <button class="btn" id="btn-export-video" title="Record looping video">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3.5" width="9" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 7 L14.5 4.5 V11.5 L10.5 9" fill="currentColor"/></svg>
+      Video
+    </button>
+    <button class="btn" id="btn-export-gif" title="Render seamless looping GIF">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8 a5.5 5.5 0 1 1 -1.6 -3.9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13.8 1.6 V4.4 H11" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      GIF
+    </button>
+  </div>
+</header>
+
+<main class="app">
+  <section class="stage" id="stage">
+    <div class="canvas-frame" id="canvas-frame">
+      <canvas id="view"></canvas>
+    </div>
+    <div class="stage-meta">
+      <div class="meta-left">
+        <button class="icon-btn" id="btn-play" title="Play / pause (Space)">
+          <svg id="icon-pause" viewBox="0 0 14 14"><rect x="2.5" y="2" width="3" height="10" rx="1" fill="currentColor"/><rect x="8.5" y="2" width="3" height="10" rx="1" fill="currentColor"/></svg>
+          <svg id="icon-play" viewBox="0 0 14 14" style="display:none"><path d="M3.5 2 L12 7 L3.5 12 Z" fill="currentColor"/></svg>
+        </button>
+        <span class="meta-item mono" id="meta-mode">—</span>
+        <span class="meta-sep"></span>
+        <span class="meta-item mono dim" id="meta-seed">seed 0000</span>
+      </div>
+      <div class="meta-right">
+        <span class="meta-item mono dim" id="meta-loop">4.0s loop</span>
+        <span class="meta-sep"></span>
+        <span class="meta-item mono dim" id="meta-res">0×0</span>
+        <span class="meta-sep"></span>
+        <span class="meta-item mono dim" id="meta-fps">60 fps</span>
+      </div>
+    </div>
+  </section>
+
+  <aside class="rail" id="rail"><!-- built by ui.js --></aside>
+</main>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="overlay-card">
+    <div class="overlay-title" id="overlay-title">Rendering</div>
+    <div class="overlay-detail mono" id="overlay-detail">—</div>
+    <div class="progress"><div class="progress-fill" id="overlay-bar"></div></div>
+    <button class="btn overlay-cancel" id="overlay-cancel">Cancel</button>
+  </div>
+</div>
+
+<div class="toast mono" id="toast" hidden></div>
+
+<script src="js/palettes.js"></script>
+<script src="js/shaders.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/gifenc.js"></script>
+<script src="js/exporter.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
