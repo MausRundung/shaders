@@ -27,15 +27,15 @@ var ASPECTS = { "16:9": 16 / 9, "3:2": 1.5, "1:1": 1, "4:5": 0.8, "21:9": 21 / 9
 
 /* ---------------- state ---------------- */
 
-/* startup: a calm, clean aura on the Halo palette with a fixed seed */
+/* startup: curated reeded-glass ember design (code LMN1.WzEsNyw5MDE1...) */
 var P = {
-  mode: 3, seed: 1207,
-  c1: "#4a30e0", c2: "#7a8cff", c3: "#e89ab8", c4: "#c2d4ff", bg: "#f4f6ff",
-  hue: 0, sat: 1.0, exposure: 1.0, contrast: 1.0,
-  scale: 1.2, complex: 3.8, warp: 0.5, flow: 0.5, stretch: 0,
-  light: 1.0, gloss: 64, lightAngle: 130, irid: 0.3, glow: 0.15,
-  grain: 0.03, cell: 90, lines: 56, ca: 0, vig: 0, soft: 1.35,
-  travel: 0.6, loop: 6,
+  mode: 7, seed: 9015,
+  c1: "#ff6a00", c2: "#ffb347", c3: "#a81c00", c4: "#3d0c02", bg: "#070403",
+  hue: 23, sat: 0.55, exposure: 1.016, contrast: 0.957,
+  scale: 0.803, complex: 5.603, warp: 1.073, flow: 0.233, stretch: -0.089,
+  light: 1.175, gloss: 44, lightAngle: 235, irid: 0.012, glow: 0.471,
+  grain: 0.024, cell: 113, lines: 67, ca: 0.018, vig: 0.079, soft: 1.14,
+  travel: 0.72, loop: 7.5,
   lockStyle: false,
   imgRes: "2160", vidRes: "1080", vidFps: "30", vidLen: "l2",
   gifW: "640", gifFps: 25, gifDither: true, gifLoop: true,
@@ -97,7 +97,7 @@ function rangeFor(key) {
   return rec[key] || DEF_RANGE[key];
 }
 
-var activePreset = 11;   /* Halo — matches the startup design */
+var activePreset = 3;   /* Ember — matches the startup design */
 var setPresetActive = function () {};
 
 function applyPalette(pal, presetIdx) {
