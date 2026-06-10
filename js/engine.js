@@ -18,7 +18,8 @@ var Engine = (function () {
     "u_light", "u_gloss", "u_lightAngle", "u_irid", "u_glow",
     "u_grain", "u_cell", "u_lines", "u_ca", "u_vig", "u_soft",
     "u_travel",
-    "u_synth", "u_modeB", "u_mixOp", "u_blend"
+    "u_synth", "u_modeB", "u_mixOp", "u_blend",
+    "u_genome", "u_g1", "u_g2", "u_g3"
   ];
 
   function compile(type, src) {
@@ -112,6 +113,12 @@ var Engine = (function () {
     gl.uniform1i(uniforms.u_modeB, P.modeB | 0);
     gl.uniform1i(uniforms.u_mixOp, P.mixOp | 0);
     gl.uniform1f(uniforms.u_blend, P.blend);
+
+    var g = P.genes || [0,0,0,0, 0,0,0,0, 0,0,0,0];
+    gl.uniform1i(uniforms.u_genome, P.genomeOn ? 1 : 0);
+    gl.uniform4f(uniforms.u_g1, g[0], g[1], g[2], g[3]);
+    gl.uniform4f(uniforms.u_g2, g[4], g[5], g[6], g[7]);
+    gl.uniform4f(uniforms.u_g3, g[8], g[9], g[10], g[11]);
   }
 
   function renderAt(phase) {

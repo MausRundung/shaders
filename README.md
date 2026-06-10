@@ -23,7 +23,7 @@ Requires a browser with WebGL2 (Chrome, Edge, Firefox).
 
 - **Randomize** (or press `R`): new style, palette, form, lighting and seed, tuned per art style so results stay good. Sometimes it invents a brand-new synth style.
 - **Style**: 9 art modes, each with its own renderer. "Keep style" locks the mode while randomizing.
-- **Synth styles**: "New synth style" blends two renderers with a random mix operation (organic mask, screen, multiply, radial, diagonal) into a completely new look, with a blend slider. "Save style" keeps favorites in your browser as one-click chips.
+- **Generated styles**: "New style" runs a 12-gene style synthesizer (6 field types x 5 domain geometries x 4 color mappings x 4 shading models x 4 overlays) that produces standalone styles which do not exist in the base set, like FLUX, RIDGE, WAVE, RING, CELL and FLOW archetypes. "Save style" keeps favorites in your browser as one-click chips.
 - **Gradient sets**: the Set button renders 4 to 12 variations of the current design (same style and palette, different seeds) and downloads them as a ZIP of PNGs, ideal for using consistent art across one website.
 - **Color**: 16 curated palettes plus a harmonic palette generator, 4 editable colors + background, hue / saturation / exposure.
 - **Form**: seed, zoom, fbm detail, domain warp, turbulence, anisotropic stretch.

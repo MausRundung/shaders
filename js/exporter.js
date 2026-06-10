@@ -49,7 +49,7 @@ var Exporter = (function () {
       busy = false;
       if (blob) {
         download(blob, stamp(P, "png"));
-        UI.toast("Saved " + w + "\u00d7" + h + " PNG");
+        FX.celebrate("Saved " + w + "\u00d7" + h + " PNG");
       }
     }, "image/png");
   }
@@ -193,7 +193,7 @@ var Exporter = (function () {
     hideOverlay();
     busy = false;
     download(new Blob([webm], { type: "video/webm" }), stamp(P, "webm"));
-    UI.toast("Saved " + totalSec.toFixed(1) + "s WEBM \u00b7 " + nFrames + " frames \u00b7 " + w + "\u00d7" + h + " @ " + fps + "fps");
+    FX.celebrate("Saved " + totalSec.toFixed(1) + "s video \u00b7 " + w + "\u00d7" + h + " @ " + fps + "fps");
 
     function restore() {
       Engine.setSize(prev[0], prev[1]);
@@ -246,7 +246,7 @@ var Exporter = (function () {
     busy = false;
     if (data && !cancelled) {
       download(new Blob([data], { type: "image/gif" }), stamp(P, "gif"));
-      UI.toast("Saved " + nFrames + "-frame looping GIF (" + w + "\u00d7" + h + ")");
+      FX.celebrate("Saved " + nFrames + "-frame looping GIF (" + w + "\u00d7" + h + ")");
     }
   }
 

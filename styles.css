@@ -28,6 +28,8 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+:root { color-scheme: dark; }
+
 html, body { height: 100%; }
 
 body {
@@ -819,18 +821,58 @@ select { cursor: pointer; appearance: none; padding-right: 22px;
 /* ---------- intro stagger animation ---------- */
 
 @keyframes intro-pop {
-  0% { opacity: 0; transform: scale(1.5) translateY(-6px); filter: blur(5px); }
-  60% { opacity: 1; filter: blur(0); }
-  100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+  0% { opacity: 0; transform: scale(1.45) translateY(-4px); }
+  62% { opacity: 1; }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
 }
-.intro .topbar > *,
-.intro .rail-section,
-.intro .stage-meta,
-.intro .canvas-frame {
-  animation: intro-pop 640ms cubic-bezier(.22,1.25,.36,1) both;
+.intro .stagger-item {
+  animation: intro-pop 560ms cubic-bezier(.22,1.3,.36,1) both;
   animation-delay: var(--intro-d, 0ms);
+  will-change: transform, opacity;
 }
-.intro .canvas-frame { animation-duration: 800ms; }
+.intro .canvas-frame.stagger-item { animation-duration: 780ms; }
+
+/* ---------- download success effect ---------- */
+
+.fx-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+}
+@keyframes fx-ring {
+  0% { transform: translate(-50%,-50%) scale(0.3); opacity: 0.9; }
+  100% { transform: translate(-50%,-50%) scale(2.4); opacity: 0; }
+}
+.fx-ring {
+  position: fixed;
+  width: 180px; height: 180px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.8);
+  z-index: 80;
+  pointer-events: none;
+  animation: fx-ring 700ms cubic-bezier(.2,.8,.3,1) forwards;
+}
+@keyframes toast-success-pop {
+  0% { opacity: 0; transform: translateX(-50%) scale(1.4); }
+  55% { opacity: 1; transform: translateX(-50%) scale(0.97); }
+  100% { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+.toast.success {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border-color: rgba(140, 240, 170, 0.35);
+  box-shadow: 0 10px 38px -8px rgba(40, 200, 110, 0.25);
+  animation: toast-success-pop 420ms cubic-bezier(.22,1.4,.36,1);
+}
+.toast.success svg { width: 14px; height: 14px; flex: none; }
+.toast.success svg path {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  animation: check-draw 360ms 150ms ease-out forwards;
+}
+@keyframes check-draw { to { stroke-dashoffset: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }

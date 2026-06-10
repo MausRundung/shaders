@@ -37,6 +37,7 @@ var P = {
   grain: 0.024, cell: 113, lines: 67, ca: 0.018, vig: 0.079, soft: 1.14,
   travel: 0.72, loop: 7.5,
   synthOn: false, modeB: 2, mixOp: 0, blend: 0.6,
+  genomeOn: false, genes: [0,0,0.5,3, 0,0,0,0.5, 0.5,0.5,0.5,0],
   lockStyle: false,
   imgRes: "2160", vidRes: "1080", vidFps: "30", vidLen: "l2",
   gifW: "640", gifFps: 25, gifDither: true, gifLoop: true,
@@ -135,33 +136,50 @@ function randomizeKeys(keys) {
 
 function newSeed() { P.seed = Math.floor(rnd() * 10000); }
 
-/* pairs that blend into something coherent instead of mud */
-var SYNTH_PAIRS = [
-  [0, 2], [0, 3], [0, 5], [1, 2], [1, 4], [2, 5], [2, 6], [3, 4],
-  [3, 5], [4, 5], [4, 6], [2, 7], [3, 8], [0, 8], [1, 5], [4, 8]
-];
-
-function generateSynthStyle() {
-  var pair = SYNTH_PAIRS[Math.floor(rnd() * SYNTH_PAIRS.length)];
-  var flip = rnd() < 0.5;
-  P.mode = flip ? pair[1] : pair[0];
-  P.modeB = flip ? pair[0] : pair[1];
-  P.mixOp = Math.floor(rnd() * 5);
-  P.blend = 0.4 + rnd() * 0.55;
-  P.synthOn = true;
+/* genome: 12 genes define a complete standalone style that does not
+   exist in the base set. fields x domains x colors x shading x overlays
+   gives thousands of distinct archetypes. */
+function generateGenomeStyle() {
+  P.genes = [
+    Math.floor(rnd() * 6),          // 0 field type
+    Math.floor(rnd() * 5),          // 1 domain op
+    rnd() * 1.6,                    // 2 extra warp
+    2 + Math.floor(rnd() * 6),      // 3 fold count
+    Math.floor(rnd() * 4),          // 4 color map
+    Math.floor(rnd() * 4),          // 5 shading
+    Math.floor(rnd() * 4),          // 6 overlay
+    0.3 + rnd() * 1.2,              // 7 overlay scale
+    rnd(),                          // 8 ridge sharpness
+    rnd(),                          // 9 poster steps
+    0.2 + rnd() * 0.9,              // 10 field scale
+    rnd()                           // 11 rotation
+  ];
+  P.genomeOn = true;
+  P.synthOn = false;
 }
 
-function synthName() {
-  return "SYN " + MODES[P.mode].name.slice(0, 3).toUpperCase() + "+" +
+function genomeName() {
+  var g = P.genes;
+  var n = (g[0] * 7 + g[1] * 13 + g[4] * 29 + g[5] * 47 + g[6] * 71 +
+    Math.round(g[11] * 99)) % 1000;
+  var FIELD = ["FLUX", "RIDGE", "WAVE", "RING", "CELL", "FLOW"];
+  return FIELD[g[0]] + " " + String(Math.round(n)).padStart(3, "0");
+}
+
+function styleName() {
+  if (P.genomeOn) return genomeName();
+  if (P.synthOn) return "SYN " + MODES[P.mode].name.slice(0, 3).toUpperCase() + "+" +
     MODES[P.modeB].name.slice(0, 3).toUpperCase();
+  return MODES[P.mode].full;
 }
 
 function randomizeAll() {
   if (!P.lockStyle) {
-    if (rnd() < 0.38) {
-      generateSynthStyle();
+    if (rnd() < 0.35) {
+      generateGenomeStyle();
     } else {
       P.synthOn = false;
+      P.genomeOn = false;
       P.mode = Math.floor(rnd() * MODES.length);
     }
   }
@@ -184,8 +202,7 @@ function persistSavedStyles(list) {
 }
 function saveCurrentStyle() {
   var list = loadSavedStyles();
-  var base = P.synthOn ? synthName() : MODES[P.mode].name;
-  var name = base + " " + String(Math.round(P.seed)).padStart(4, "0");
+  var name = styleName() + " " + String(Math.round(P.seed)).padStart(4, "0");
   list.unshift({ name: name, code: encodeDesign(), ts: Date.now() });
   if (list.length > 24) list.length = 24;
   persistSavedStyles(list);
@@ -205,11 +222,13 @@ var SHARE_NUMS = [
 ];
 
 function encodeDesign() {
-  var arr = [2, P.mode, Math.round(P.seed),
+  var arr = [3, P.mode, Math.round(P.seed),
     P.c1.slice(1), P.c2.slice(1), P.c3.slice(1), P.c4.slice(1), P.bg.slice(1),
     P.aspect];
   SHARE_NUMS.forEach(function (k) { arr.push(Math.round(P[k] * 1000) / 1000); });
   arr.push(P.synthOn ? 1 : 0, P.modeB | 0, P.mixOp | 0, Math.round(P.blend * 1000) / 1000);
+  arr.push(P.genomeOn ? 1 : 0);
+  P.genes.forEach(function (g) { arr.push(Math.round(g * 1000) / 1000); });
   var b64 = btoa(JSON.stringify(arr))
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   return "LMN1." + b64;
@@ -225,7 +244,8 @@ function decodeDesign(code) {
     var baseLen = 9 + SHARE_NUMS.length;
     var isV1 = Array.isArray(arr) && arr[0] === 1 && arr.length === baseLen;
     var isV2 = Array.isArray(arr) && arr[0] === 2 && arr.length === baseLen + 4;
-    if (!isV1 && !isV2) return false;
+    var isV3 = Array.isArray(arr) && arr[0] === 3 && arr.length === baseLen + 17;
+    if (!isV1 && !isV2 && !isV3) return false;
 
     var hexOk = function (h) { return /^[0-9a-fA-F]{6}$/.test(h); };
     if (![arr[3], arr[4], arr[5], arr[6], arr[7]].every(hexOk)) return false;
@@ -239,7 +259,7 @@ function decodeDesign(code) {
       var v = Number(arr[9 + i]);
       if (isFinite(v)) P[k] = v;
     });
-    if (isV2) {
+    if (isV2 || isV3) {
       P.synthOn = !!arr[baseLen];
       P.modeB = Math.min(Math.max(Math.round(arr[baseLen + 1]) || 0, 0), MODES.length - 1);
       P.mixOp = Math.min(Math.max(Math.round(arr[baseLen + 2]) || 0, 0), 4);
@@ -247,6 +267,16 @@ function decodeDesign(code) {
       P.blend = isFinite(bl) ? Math.min(Math.max(bl, 0), 1) : 0.6;
     } else {
       P.synthOn = false;
+    }
+    if (isV3) {
+      P.genomeOn = !!arr[baseLen + 4];
+      P.genes = [];
+      for (var gi = 0; gi < 12; gi++) {
+        var gv = Number(arr[baseLen + 5 + gi]);
+        P.genes.push(isFinite(gv) ? gv : 0);
+      }
+    } else {
+      P.genomeOn = false;
     }
     activePreset = -1;
     setPresetActive(-1);
@@ -295,18 +325,18 @@ function buildRail() {
     P.mode = Math.floor(rnd() * MODES.length);
     refreshAll();
   });
-  reg(UI.modeGrid(sStyle, MODES, function () { return P.synthOn ? -1 : P.mode; },
-    function (v) { P.mode = v; P.synthOn = false; refreshAll(); }));
+  reg(UI.modeGrid(sStyle, MODES, function () { return (P.synthOn || P.genomeOn) ? -1 : P.mode; },
+    function (v) { P.mode = v; P.synthOn = false; P.genomeOn = false; refreshAll(); }));
 
-  /* synth: generated styles */
+  /* genome: brand-new generated styles */
   var synthRow = UI.el("div", "share-row synth-row", sStyle);
   var btnSynth = UI.el("button", "mini-btn", synthRow);
-  btnSynth.innerHTML = '<svg viewBox="0 0 16 16"><path d="M2 8 C4 3 7 13 9 8 C11 3 13 11 14 8" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="2.5" r="1.2" fill="currentColor"/></svg>New synth style';
+  btnSynth.innerHTML = '<svg viewBox="0 0 16 16"><path d="M8 1.5 L9.8 6.2 L14.5 8 L9.8 9.8 L8 14.5 L6.2 9.8 L1.5 8 L6.2 6.2 Z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>New style';
   btnSynth.addEventListener("click", function () {
-    generateSynthStyle();
+    generateGenomeStyle();
     newSeed();
     refreshAll();
-    UI.toast("Generated " + synthName());
+    UI.toast("New style discovered: " + genomeName());
   });
   var btnSave = UI.el("button", "mini-btn", synthRow);
   btnSave.innerHTML = '<svg viewBox="0 0 16 16"><path d="M3 2 H11 L14 5 V14 H3 Z" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="5.5" y="9" width="5" height="4" fill="currentColor"/></svg>Save style';
@@ -446,8 +476,7 @@ function buildRail() {
 /* ---------------- stage / meta ---------------- */
 
 function updateMeta() {
-  document.getElementById("meta-mode").textContent =
-    P.synthOn ? synthName() : MODES[P.mode].full;
+  document.getElementById("meta-mode").textContent = styleName();
   document.getElementById("meta-seed").textContent = "seed " + String(Math.round(P.seed)).padStart(4, "0");
   document.getElementById("meta-loop").textContent = P.loop.toFixed(1) + "s loop";
   var s = Engine.size();
@@ -517,18 +546,43 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  /* intro: elements pop in big and settle into place, one after another */
+  /* intro: every element pops in big and settles into place,
+     one after another. transform/opacity only, fully compositor-driven. */
   (function intro() {
     var items = [];
-    document.querySelectorAll(".topbar > *").forEach(function (n) { items.push(n); });
+    document.querySelectorAll(".brand, .segmented button, .topbar-actions > *").forEach(function (n) { items.push(n); });
     items.push(document.querySelector(".canvas-frame"));
     items.push(document.querySelector(".stage-meta"));
-    document.querySelectorAll(".rail-section").forEach(function (n) { items.push(n); });
+    document.querySelectorAll(".rail-section").forEach(function (sec) {
+      Array.prototype.forEach.call(sec.children, function (child) {
+        if (child.classList.contains("mode-grid") ||
+            child.classList.contains("preset-row") ||
+            child.classList.contains("export-grid")) {
+          Array.prototype.forEach.call(child.children, function (n) { items.push(n); });
+        } else {
+          items.push(child);
+        }
+      });
+    });
+
+    var d = 0;
     items.forEach(function (n, i) {
-      if (n) n.style.setProperty("--intro-d", (i * 65) + "ms");
+      if (!n) return;
+      /* fast cadence inside the rail, slower for the hero pieces */
+      d += i < 12 ? 50 : 16;
+      n.classList.add("stagger-item");
+      n.style.setProperty("--intro-d", Math.min(d, 2100) + "ms");
     });
     document.body.classList.add("intro");
-    setTimeout(function () { document.body.classList.remove("intro"); }, items.length * 65 + 1100);
+    setTimeout(function () {
+      document.body.classList.remove("intro");
+      items.forEach(function (n) {
+        if (!n) return;
+        n.classList.remove("stagger-item");
+        n.style.removeProperty("--intro-d");
+        n.style.willChange = "auto";
+      });
+    }, 3000);
   })();
 
   Engine.onFps(function (fps) {

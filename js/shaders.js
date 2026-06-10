@@ -29,11 +29,17 @@ uniform float u_light, u_gloss, u_lightAngle, u_irid, u_glow;
 uniform float u_grain, u_cell, u_lines, u_ca, u_vig, u_soft;
 uniform float u_travel;
 
-/* synth: procedural style combinator */
+/* synth: procedural style combinator (legacy share codes) */
 uniform int   u_synth;     // 0 = single mode, 1 = blend two modes
 uniform int   u_modeB;
 uniform int   u_mixOp;     // 0 noise mask, 1 screen, 2 multiply, 3 radial, 4 diagonal
 uniform float u_blend;
+
+/* genome: parametric style synthesizer, every gene set is its own style */
+uniform int   u_genome;    // 1 = render the genome style
+uniform vec4  u_g1;        // field type, domain op, warp amount, fold count
+uniform vec4  u_g2;        // color map, shading, overlay, overlay scale
+uniform vec4  u_g3;        // ridge sharpness, poster steps, field scale, rotation
 
 out vec4 fragColor;
 
@@ -408,6 +414,131 @@ vec3 sceneMosaic(vec2 uv){
   return col;
 }
 
+/* =========================================================
+   GENOME, the parametric style synthesizer.
+   12 genes select field, domain geometry, color mapping,
+   shading and overlay. Each combination is a distinct style.
+   ========================================================= */
+
+float gnVoro(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  float d = 8.0;
+  for (int y = -1; y <= 1; y++)
+  for (int x = -1; x <= 1; x++){
+    vec2 g = vec2(float(x), float(y));
+    vec2 o = hash22(i + g + floor(u_seed));
+    d = min(d, length(g + o - f));
+  }
+  return d;
+}
+
+float gnField(int ft, vec2 p){
+  vec2 so = SO(), lt = LT();
+  if (ft == 0) return fbm(p + so + lt);
+  if (ft == 1) {                                  /* ridged */
+    float v = 1.0 - abs(2.0*fbm(p + so + lt) - 1.0);
+    return pow(v, 1.0 + u_g3.x*4.0);
+  }
+  if (ft == 2) {                                  /* wave interference */
+    float a = sin(p.x*2.1 + fbm(p*0.7 + so + lt)*6.0);
+    float b = sin(p.y*1.7 + fbm(p.yx*0.8 - so - lt)*6.0);
+    return a*b*0.25 + 0.5;
+  }
+  if (ft == 3) {                                  /* warped rings */
+    float d = length(p) + (fbm(p*0.9 + so + lt) - 0.5)*1.2;
+    return fract(d*(1.0 + u_g3.x*2.0));
+  }
+  if (ft == 4) {                                  /* cellular */
+    float v = gnVoro(p*1.4 + lt*0.8);
+    return pow(clamp(v, 0.0, 1.0), 0.8 + u_g3.x*2.0);
+  }
+  /* flow: fbm fed through itself */
+  float f1 = fbm(p + so + lt);
+  return fbm(p + 2.4*vec2(f1, fbm(p + so*1.3 - lt)) + so);
+}
+
+vec2 gnDomain(int dop, vec2 p){
+  p = rot(u_g3.w*TAU) * p;
+  if (dop == 1) {                                 /* polar */
+    return vec2(atan(p.y, p.x)*(1.0 + floor(u_g1.w*0.5)), length(p)*1.6);
+  }
+  if (dop == 2) {                                 /* kaleidoscope */
+    float n = 2.0 + floor(u_g1.w);
+    float a = atan(p.y, p.x);
+    float seg = TAU/n;
+    a = abs(mod(a, seg) - seg*0.5);
+    return vec2(cos(a), sin(a))*length(p);
+  }
+  if (dop == 3) return abs(p);                    /* mirror */
+  if (dop == 4) {                                 /* soft grid repeat */
+    return (fract(p*0.5) - 0.5)*2.6;
+  }
+  return p;
+}
+
+vec3 gnColor(int cm, float t, vec2 p){
+  t = clamp(t, 0.0, 1.0);
+  if (cm == 1) return paletteCyc(t*1.4);
+  if (cm == 2) {                                  /* posterized */
+    float steps = 3.0 + floor(u_g3.y*5.0);
+    return palette(floor(t*steps)/(steps - 1.0));
+  }
+  if (cm == 3) {                                  /* duotone + highlight pop */
+    vec3 c = mix(u_bg, u_c1, smoothstep(0.15, 0.75, t));
+    return mix(c, u_c3, smoothstep(0.82, 0.98, t));
+  }
+  return palette(t);
+}
+
+vec3 sceneGenome(vec2 uv){
+  vec2 p0 = toP(uv);
+  int ft  = int(u_g1.x);
+  int dop = int(u_g1.y);
+  int cm  = int(u_g2.x);
+  int sh  = int(u_g2.y);
+  int ov  = int(u_g2.z);
+
+  vec2 p = gnDomain(dop, p0*(0.6 + u_g3.z*1.4));
+  vec2 so = SO();
+  p += u_g1.z*u_warp*0.8*vec2(fbm(p*0.6 + so) - 0.5, fbm(p*0.6 - so) - 0.5)*2.0;
+
+  float f = gnField(ft, p);
+  vec3 col = gnColor(cm, f*1.15 - 0.05, p);
+
+  if (sh == 1) {                                  /* embossed light */
+    float e = 0.05;
+    float fx = gnField(ft, p + vec2(e, 0.0));
+    float fy = gnField(ft, p + vec2(0.0, e));
+    vec3 n = normalize(vec3(-(fx - f)/e*2.0, -(fy - f)/e*2.0, 1.0));
+    float la = u_lightAngle*PI/180.0;
+    vec3 L = normalize(vec3(cos(la), sin(la), 0.6));
+    float diff = max(dot(n, L), 0.0);
+    float spec = pow(max(dot(n, normalize(L + vec3(0,0,1))), 0.0), u_gloss);
+    col *= 0.35 + 0.8*diff;
+    col += vec3(1.0)*spec*u_light*0.7;
+  } else if (sh == 2) {                           /* glowing edges */
+    float e = 0.04;
+    float g = abs(gnField(ft, p + vec2(e,0.0)) - f) + abs(gnField(ft, p + vec2(0.0,e)) - f);
+    col = mix(u_bg, col, 0.35);
+    col += palette(clamp(f + 0.2, 0.0, 1.0)) * smoothstep(0.01, 0.14, g) * u_light * 1.4;
+  } else if (sh == 3) {                           /* deep contrast carve */
+    col *= smoothstep(0.0, 0.55, f)*1.25;
+    col = mix(u_bg, col, smoothstep(0.08, 0.35, f));
+  }
+
+  if (ov == 1) {                                  /* stripes */
+    float s = sin(p0.x*u_g2.w*40.0 + f*6.0);
+    col *= 0.82 + 0.18*smoothstep(-0.2, 0.4, s);
+  } else if (ov == 2) {                           /* dot lattice */
+    vec2 g = fract(p0*u_g2.w*16.0) - 0.5;
+    col *= 0.78 + 0.22*smoothstep(0.42, 0.30, length(g));
+  } else if (ov == 3) {                           /* scanlines */
+    col *= 0.86 + 0.14*sin(uv.y*u_res.y*0.7 + f*3.0);
+  }
+
+  return col;
+}
+
 /* ---------------- dispatch + post ---------------- */
 
 vec3 sceneFor(int m, vec2 uv){
@@ -423,6 +554,7 @@ vec3 sceneFor(int m, vec2 uv){
 }
 
 vec3 scene(vec2 uv){
+  if (u_genome == 1) return sceneGenome(uv);
   vec3 a = sceneFor(u_mode, uv);
   if (u_synth == 0) return a;
 
@@ -455,12 +587,11 @@ void main(){
   vec2 uv = gl_FragCoord.xy/u_res;
   vec3 col;
 
-  /* CA re-renders the scene per channel; with synth blending that would
-     inline the full mode dispatch 6 times and break the D3D linker, so
-     aberration only applies to single-mode renders */
-  if (u_ca > 0.004 && u_synth == 0){
+  /* CA re-renders per channel. It calls the single-mode renderer directly
+     to keep the D3D linker's static inlining budget low. */
+  if (u_ca > 0.004 && u_synth == 0 && u_genome == 0){
     vec2 off = (uv-0.5)*u_ca*0.016;
-    col = vec3(scene(uv-off).r, scene(uv).g, scene(uv+off).b);
+    col = vec3(sceneFor(u_mode, uv-off).r, sceneFor(u_mode, uv).g, sceneFor(u_mode, uv+off).b);
   } else {
     col = scene(uv);
   }

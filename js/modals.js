@@ -250,8 +250,8 @@ var Modals = (function () {
       a.download = "lumen-set-" + MODES[P.mode].key + ".zip";
       a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
-      UI.toast("Set saved: " + entries.length + " PNGs (" + w + "\u00d7" + h + ")");
       close();
+      FX.celebrate("Set saved: " + entries.length + " PNGs (" + w + "\u00d7" + h + ")");
     });
 
     await build();
