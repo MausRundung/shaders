@@ -10,6 +10,7 @@ var Engine = (function () {
   var loopT = 0;            // seconds into current loop
   var lastTick = 0;
   var fps = 60, fpsAcc = 0, fpsN = 0, fpsCb = null;
+  var maxFps = 60, minFrameMs = 1000 / 60, lastDraw = 0;
   var getParams = null;     // injected: () => P
 
   var UNIFORM_NAMES = [
@@ -34,6 +35,49 @@ var Engine = (function () {
     return sh;
   }
 
+  /* Two-stage boot: the slim base shader (no genome) links in a second
+     or two and gets pixels on screen; the full shader compiles in the
+     background via KHR_parallel_shader_compile and is swapped in when
+     the driver finishes. The main thread never blocks on a long link. */
+
+  var fullReady = false;
+
+  function buildProgram(fragSrc, parallel, cb) {
+    var prog = gl.createProgram();
+    try {
+      gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT_SRC));
+      gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fragSrc));
+    } catch (e) {
+      cb(null, String(e.message || e));
+      return;
+    }
+    gl.linkProgram(prog);
+
+    function check() {
+      if (gl.isContextLost()) { cb(null, "context lost"); return; }
+      if (gl.getProgramParameter(prog, gl.LINK_STATUS)) cb(prog, null);
+      else cb(null, gl.getProgramInfoLog(prog) || "unknown link error");
+    }
+
+    if (parallel) {
+      (function poll() {
+        if (gl.isContextLost()) { cb(null, "context lost"); return; }
+        if (gl.getProgramParameter(prog, parallel.COMPLETION_STATUS_KHR)) check();
+        else setTimeout(poll, 80);
+      })();
+    } else {
+      setTimeout(check, 30);
+    }
+  }
+
+  function adoptProgram(prog) {
+    program = prog;
+    gl.useProgram(program);
+    UNIFORM_NAMES.forEach(function (n) {
+      uniforms[n] = gl.getUniformLocation(program, n);
+    });
+  }
+
   function init(canvasEl, paramsGetter, opts) {
     opts = opts || {};
     canvas = canvasEl;
@@ -43,16 +87,20 @@ var Engine = (function () {
       preserveDrawingBuffer: true,
       powerPreference: "default"
     });
-    if (!gl) throw new Error("WebGL2 not available");
-
-    program = gl.createProgram();
-    gl.attachShader(program, compile(gl.VERTEX_SHADER, VERT_SRC));
-    gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAG_SRC));
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error("Program link error:\n" + gl.getProgramInfoLog(program));
+    if (!gl) {
+      if (opts.onError) { opts.onError("WebGL2 not available"); return; }
+      throw new Error("WebGL2 not available");
     }
-    gl.useProgram(program);
+
+    canvas.addEventListener("webglcontextlost", function (e) {
+      e.preventDefault();
+      suspended = true;
+      started = false;
+      ready = false;
+      if (opts.onContextLost) opts.onContextLost();
+    }, false);
+
+    var parallel = gl.getExtension("KHR_parallel_shader_compile");
 
     var buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -60,18 +108,40 @@ var Engine = (function () {
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-    UNIFORM_NAMES.forEach(function (n) {
-      uniforms[n] = gl.getUniformLocation(program, n);
-    });
+    buildProgram(FRAG_SRC_BASE, parallel, function (baseProg, err) {
+      if (!baseProg) {
+        if (opts.onError) opts.onError("Program link error: " + err);
+        return;
+      }
+      adoptProgram(baseProg);
+      ready = true;
+      lastTick = performance.now();
+      started = false;
 
-    ready = true;
-    lastTick = performance.now();
-    started = false;
-    if (opts.autostart !== false) start();
+      if (opts.onReady) opts.onReady();
+      if (opts.autostart !== false) start();
+
+      /* upgrade to the full shader (genome styles) in the background */
+      buildProgram(FRAG_SRC_FULL, parallel, function (fullProg, ferr) {
+        if (!fullProg) return;   /* keep base; genome styles unavailable */
+        adoptProgram(fullProg);
+        gl.deleteProgram(baseProg);
+        fullReady = true;
+        if (opts.onFullReady) opts.onFullReady();
+      });
+    });
+  }
+
+  function isLost() {
+    return !gl || gl.isContextLost();
+  }
+
+  function canRender() {
+    return ready && gl && !gl.isContextLost();
   }
 
   function start() {
-    if (!ready || started) return;
+    if (!canRender() || started) return;
     started = true;
     suspended = false;
     lastTick = performance.now();
@@ -79,13 +149,14 @@ var Engine = (function () {
   }
 
   function setSize(w, h) {
-    if (!canvas) return;
+    if (!canvas || !canRender()) return;
     canvas.width = w;
     canvas.height = h;
-    if (gl) gl.viewport(0, 0, w, h);
+    gl.viewport(0, 0, w, h);
   }
 
   function pushUniforms(P, phase) {
+    if (!canRender()) return;
     gl.uniform2f(uniforms.u_res, canvas.width, canvas.height);
     gl.uniform1f(uniforms.u_phase, phase);
     gl.uniform1f(uniforms.u_seed, P.seed);
@@ -136,6 +207,7 @@ var Engine = (function () {
   }
 
   function renderAt(phase) {
+    if (!canRender()) return;
     var P = getParams();
     pushUniforms(P, phase);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -147,7 +219,12 @@ var Engine = (function () {
   }
 
   function tick(now) {
-    if (suspended) return;
+    if (suspended || !canRender()) return;
+    if (now - lastDraw < minFrameMs) {
+      requestAnimationFrame(tick);
+      return;
+    }
+    lastDraw = now;
 
     var dt = Math.min((now - lastTick) / 1000, 0.1);
     lastTick = now;
@@ -165,6 +242,11 @@ var Engine = (function () {
       if (fpsCb) fpsCb(fps);
     }
     requestAnimationFrame(tick);
+  }
+
+  function setMaxFps(n) {
+    maxFps = Math.max(15, Math.min(n, 60));
+    minFrameMs = 1000 / maxFps;
   }
 
   function readPixels() {
@@ -190,16 +272,20 @@ var Engine = (function () {
     currentPhase: currentPhase,
     resetTime: function () { loopT = 0; },
     setLoopTime: function (t) { loopT = t; },
-    suspend: function () { suspended = true; },
+    suspend: function () { suspended = true; started = false; },
     resume: function () {
+      if (!canRender()) return;
       suspended = false;
-      lastTick = performance.now();
-      requestAnimationFrame(tick);
+      started = false;
+      start();
     },
+    isLost: isLost,
+    setMaxFps: setMaxFps,
+    hasGenome: function () { return fullReady; },
     setPlaying: function (v) { playing = v; lastTick = performance.now(); },
     isPlaying: function () { return playing; },
     onFps: function (cb) { fpsCb = cb; },
     canvas: function () { return canvas; },
-    size: function () { return [canvas.width, canvas.height]; }
+    size: function () { return canvas ? [canvas.width, canvas.height] : [0, 0]; }
   };
 })();

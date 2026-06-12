@@ -6,7 +6,10 @@ var VERT_SRC = "#version 300 es\n" +
 "layout(location=0) in vec2 a_pos;\n" +
 "void main(){ gl_Position = vec4(a_pos, 0.0, 1.0); }\n";
 
-var FRAG_SRC = `#version 300 es
+/* The fragment source is built twice: a slim "base" variant without the
+   genome synthesizer (links fast, used at boot) and the full variant
+   compiled lazily in the background. */
+var FRAG_BODY = `
 precision highp float;
 precision highp int;
 
@@ -179,10 +182,6 @@ vec3 sceneChrome(vec2 uv){
   col += alb2 * spec2 * u_light * 1.35;
   col += palette(clamp(fres*0.85 + u_irid*n.y*0.4, 0.0, 1.0)) * fres * u_light * 0.55;
   col += vec3(1.0) * pow(spec, 3.0) * u_light * 0.5;
-  /* clearcoat glass sheen on top of the metal */
-  float coat = pow(max(dot(n, normalize(vec3(0.0, 0.0, 1.0))), 0.0), 18.0);
-  col += vec3(1.0) * coat * u_light * 0.22;
-  col = mix(col, col + palette(fres*0.5)*0.08, fres*0.35);
   return col;
 }
 
@@ -387,37 +386,22 @@ vec3 boldField(vec2 p){
   return col;
 }
 
-vec3 sampleReeded(vec2 suv, float blur){
-  vec3 c0 = boldField(toP(suv)*0.8);
-  vec3 c1 = boldField(toP(suv + vec2(blur, blur*0.22))*0.8);
-  vec3 c2 = boldField(toP(suv - vec2(blur, blur*0.22))*0.8);
-  return c0*0.52 + c1*0.24 + c2*0.24;
-}
-
 vec3 sceneReeded(vec2 uv){
   float ridgeFreq = max(u_lines*0.55, 6.0);
   float nx = uv.x * ridgeFreq;
   float ci = floor(nx);
   float lx = fract(nx) - 0.5;
-
-  /* lens refraction across each flute */
   float lens = sin(lx*PI);
-  float refr = lx*0.28*u_warp + lens*0.11*u_warp;
+  float refr = lx*0.22*u_warp + lens*0.08*u_warp;
   float srcX = (ci + 0.5 + refr) / ridgeFreq;
-  float blur = 0.0035*u_soft*(0.6 + u_warp*0.5);
-  vec3 col = sampleReeded(vec2(srcX, uv.y), blur);
+  vec3 col = boldField(toP(vec2(srcX, uv.y))*0.8);
 
   float ridge = cos(lx*PI);
-  float shade = 0.74 + 0.30*ridge;
+  float shade = 0.78 + 0.28*ridge;
   float groove = smoothstep(0.48, 0.40, abs(lx));
-  col *= mix(0.50, shade, groove);
-
-  /* fresnel rim + peak specular */
-  float fres = pow(1.0 - abs(ridge), 2.6);
-  float specPow = mix(10.0, 48.0, clamp(u_gloss/120.0, 0.0, 1.0));
-  float spec = pow(max(ridge, 0.0), specPow);
-  col += vec3(1.0)*spec*u_light*0.20;
-  col += mix(vec3(0.0), col*0.35 + vec3(0.06, 0.05, 0.04), fres*u_light*0.42);
+  col *= mix(0.54, shade, groove);
+  float spec = pow(max(ridge, 0.0), mix(12.0, 36.0, clamp(u_gloss/120.0, 0.0, 1.0)));
+  col += vec3(1.0)*spec*u_light*0.14;
   return col;
 }
 
@@ -441,6 +425,7 @@ vec3 sceneMosaic(vec2 uv){
    12 genes select field, domain geometry, color mapping,
    shading and overlay. Each combination is a distinct style.
    ========================================================= */
+#if HAS_GENOME
 
 float gnVoro(vec2 p){
   vec2 i = floor(p), f = fract(p);
@@ -476,7 +461,7 @@ float gnField(int ft, vec2 p){
   }
   if (ft == 5) {                                  /* flow */
     float f1 = fbm(p + so + lt);
-    return fbm(p + 2.4*vec2(f1, fbm(p + so*1.3 - lt)) + so);
+    return fbm(p + 2.4*vec2(f1, 1.0 - f1) + so);
   }
   if (ft == 6) {                                  /* cross bands */
     float bx = sin(p.x*(2.2 + u_g3.x*4.5) + lt.x*2.0);
@@ -485,8 +470,9 @@ float gnField(int ft, vec2 p){
   }
   if (ft == 7) {                                  /* plaid grid */
     vec2 q = p*(1.8 + u_g3.z*1.2);
-    float gx = step(0.5, fract(q.x + fbm(p*0.35 + so)*0.15));
-    float gy = step(0.5, fract(q.y + fbm(p.yx*0.35 - so)*0.15));
+    float j = fbm(p*0.35 + so)*0.15;
+    float gx = step(0.5, fract(q.x + j));
+    float gy = step(0.5, fract(q.y - j));
     return mix(gx*gy, 1.0 - gx*gy, 0.5 + 0.5*sin(lt.x*3.0));
   }
   if (ft == 8) {                                  /* hex lattice edges */
@@ -577,14 +563,18 @@ vec3 sceneGenome(vec2 uv){
   vec2 so = SO();
   p += u_g1.z*u_warp*0.8*vec2(fbm(p*0.6 + so) - 0.5, fbm(p*0.6 - so) - 0.5)*2.0;
 
-  float f = gnField(ft, p);
+  /* the field and its gradient are sampled exactly once and shared by
+     every shading branch: keeps the D3D static-inline budget low */
+  float e = 0.05;
+  float f  = gnField(ft, p);
+  float fx = gnField(ft, p + vec2(e, 0.0));
+  float fy = gnField(ft, p + vec2(0.0, e));
+  vec2 grad = vec2((fx - f)/e, (fy - f)/e);
+
   vec3 col = gnColor(cm, f*1.15 - 0.05, p);
 
   if (sh == 1) {                                  /* embossed light */
-    float e = 0.05;
-    float fx = gnField(ft, p + vec2(e, 0.0));
-    float fy = gnField(ft, p + vec2(0.0, e));
-    vec3 n = normalize(vec3(-(fx - f)/e*2.0, -(fy - f)/e*2.0, 1.0));
+    vec3 n = normalize(vec3(-grad.x*2.0, -grad.y*2.0, 1.0));
     float la = u_lightAngle*PI/180.0;
     vec3 L = normalize(vec3(cos(la), sin(la), 0.6));
     float diff = max(dot(n, L), 0.0);
@@ -592,27 +582,16 @@ vec3 sceneGenome(vec2 uv){
     col *= 0.35 + 0.8*diff;
     col += vec3(1.0)*spec*u_light*0.7;
   } else if (sh == 2) {                           /* glowing edges */
-    float e = 0.04;
-    float g = abs(gnField(ft, p + vec2(e,0.0)) - f) + abs(gnField(ft, p + vec2(0.0,e)) - f);
+    float g = (abs(fx - f) + abs(fy - f))*1.25;
     col = mix(u_bg, col, 0.35);
     col += palette(clamp(f + 0.2, 0.0, 1.0)) * smoothstep(0.01, 0.14, g) * u_light * 1.4;
   } else if (sh == 3) {                           /* deep contrast carve */
     col *= smoothstep(0.0, 0.55, f)*1.15;
     col = mix(u_bg, col, smoothstep(0.08, 0.35, f));
-  } else if (sh == 4) {                           /* glass refraction */
-    float e = 0.055;
-    float fx = gnField(ft, p + vec2(e, 0.0));
-    float fy = gnField(ft, p + vec2(0.0, e));
-    vec2 grad = vec2((fx - f)/e, (fy - f)/e);
-    vec2 pRef = p - grad*(0.12 + u_g1.z*0.22);
-    float f2 = gnField(ft, pRef);
-    col = gnColor(cm, f2*1.08 - 0.04, pRef);
-    float fres = pow(1.0 - clamp(length(grad)*1.8, 0.0, 1.0), 2.4);
-    float flute = 0.86 + 0.14*abs(sin(p0.x*u_lines*0.32 + p0.y*0.18));
-    col *= flute;
-    col += vec3(1.0)*fres*u_light*0.14;
-    float spec = pow(max(1.0 - abs(grad.x + grad.y)*0.5, 0.0), mix(8.0, 36.0, u_gloss/120.0));
-    col += vec3(1.0)*spec*u_light*0.18;
+  } else if (sh == 4) {                           /* glass sheen */
+    float fres = pow(1.0 - clamp(length(grad)*1.4, 0.0, 1.0), 2.2);
+    col *= 0.86 + 0.14*abs(sin(p0.x*u_lines*0.28));
+    col += vec3(1.0)*fres*u_light*0.16;
   }
 
   if (ov == 1) {                                  /* stripes */
@@ -631,6 +610,7 @@ vec3 sceneGenome(vec2 uv){
 
   return col;
 }
+#endif
 
 /* ---------------- dispatch + post ---------------- */
 
@@ -646,47 +626,30 @@ vec3 sceneFor(int m, vec2 uv){
   return sceneMosaic(uv);
 }
 
+/* single scene call per fragment: keeps the D3D/ANGLE static
+   inlining budget low so the program links fast everywhere.
+   legacy synth share codes fall back to mode A. */
 vec3 scene(vec2 uv){
+#if HAS_GENOME
   if (u_genome == 1) return sceneGenome(uv);
-  vec3 a = sceneFor(u_mode, uv);
-  if (u_synth == 0) return a;
-
-  vec3 b = sceneFor(u_modeB, uv);
-  float asp = u_res.x/u_res.y;
-  vec2 c = (uv - 0.5)*vec2(asp, 1.0);
-
-  if (u_mixOp == 1) {                       /* screen: layered light */
-    return mix(a, 1.0 - (1.0 - a)*(1.0 - b), u_blend);
-  }
-  if (u_mixOp == 2) {                       /* multiply with lift */
-    return mix(a, a*b*1.6 + a*0.12, u_blend);
-  }
-  if (u_mixOp == 3) {                       /* radial: B grows from center */
-    float m = smoothstep(0.15, 0.85, length(c)*1.15);
-    return mix(b, a, mix(1.0, m, u_blend));
-  }
-  if (u_mixOp == 4) {                       /* soft diagonal split */
-    float ang = TAU*hash11(u_seed*0.091 + 5.0);
-    float m = smoothstep(-0.45, 0.45, cos(ang)*c.x + sin(ang)*c.y);
-    return mix(a, b, m*u_blend);
-  }
-  /* default: organic noise mask */
-  float m = fbm(c*1.6 + SO()*0.7 + LT()*0.5);
-  m = smoothstep(0.32, 0.68, m);
-  return mix(a, b, m*u_blend);
+#endif
+  return sceneFor(u_mode, uv);
 }
 
 void main(){
   vec2 uv = gl_FragCoord.xy/u_res;
-  vec3 col;
+  vec3 col = scene(uv);
 
-  /* CA re-renders per channel. It calls the single-mode renderer directly
-     to keep the D3D linker's static inlining budget low. */
-  if (u_ca > 0.004 && u_synth == 0 && u_genome == 0){
-    vec2 off = (uv-0.5)*u_ca*0.016;
-    col = vec3(sceneFor(u_mode, uv-off).r, sceneFor(u_mode, uv).g, sceneFor(u_mode, uv+off).b);
-  } else {
-    col = scene(uv);
+  /* chromatic fringe: cheap radial channel split, no scene re-render */
+  if (u_ca > 0.004){
+    float asp0 = u_res.x/u_res.y;
+    float r2 = length((uv - 0.5)*vec2(asp0, 1.0));
+    float w = clamp(u_ca, 0.0, 1.0)*smoothstep(0.18, 0.85, r2)*0.45;
+    vec3 shifted = vec3(
+      hueRotate(col,  10.0).r,
+      col.g,
+      hueRotate(col, -10.0).b);
+    col = mix(col, shifted, w);
   }
 
   /* glow: soft luminance knee */
@@ -713,3 +676,7 @@ void main(){
   fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }
 `;
+
+var FRAG_SRC_BASE = "#version 300 es\n#define HAS_GENOME 0\n" + FRAG_BODY;
+var FRAG_SRC_FULL = "#version 300 es\n#define HAS_GENOME 1\n" + FRAG_BODY;
+var FRAG_SRC = FRAG_SRC_FULL; /* legacy alias */

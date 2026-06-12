@@ -236,6 +236,23 @@ body.ready .canvas-boot { opacity: 0; }
 
 body.ready #view { opacity: 1; }
 
+.stage-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: #9b9ba4;
+  font-size: 13px;
+  line-height: 1.6;
+  background: rgba(9, 9, 11, 0.92);
+  border-radius: var(--radius-l);
+  z-index: 2;
+}
+.stage-error[hidden] { display: none !important; }
+
 .stage-meta {
   display: flex;
   align-items: center;

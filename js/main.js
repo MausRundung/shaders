@@ -241,7 +241,7 @@ function styleName() {
 
 function randomizeAll() {
   if (!P.lockStyle) {
-    if (rnd() < 0.42) {
+    if (rnd() < 0.42 && Engine.hasGenome()) {
       generateGenomeStyle();
     } else {
       P.synthOn = false;
@@ -401,6 +401,10 @@ function buildRail() {
   var btnSynth = UI.el("button", "mini-btn", synthRow);
   btnSynth.innerHTML = '<svg viewBox="0 0 16 16"><path d="M8 1.5 L9.8 6.2 L14.5 8 L9.8 9.8 L8 14.5 L6.2 9.8 L1.5 8 L6.2 6.2 Z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>New style';
   btnSynth.addEventListener("click", function () {
+    if (!Engine.hasGenome()) {
+      UI.toast("Style synthesizer is still warming up, try again in a moment");
+      return;
+    }
     generateGenomeStyle();
     newSeed();
     refreshAll();
@@ -553,8 +557,12 @@ function updateMeta() {
   }
 }
 
+var stage = { failed: false, resizeObs: null, resizeTimer: null, bufW: 0, bufH: 0 };
+
 function fitCanvas(preview) {
+  if (stage.failed) return;
   var frame = document.getElementById("canvas-frame");
+  if (!frame) return;
   var availW = frame.clientWidth - 80;
   var availH = frame.clientHeight - 52;
   if (availW <= 0 || availH <= 0) return;
@@ -564,6 +572,7 @@ function fitCanvas(preview) {
   w = Math.round(w);
   h = Math.round(h);
   var canvasEl = document.getElementById("view");
+  if (!canvasEl || !canvasEl.isConnected) return;
   canvasEl.style.width = w + "px";
   canvasEl.style.height = h + "px";
   var boot = document.getElementById("canvas-boot");
@@ -571,11 +580,35 @@ function fitCanvas(preview) {
     boot.style.width = w + "px";
     boot.style.height = h + "px";
   }
-  if (!Engine.isReady()) return;
-  var dprCap = preview ? 0.75 : 1.35;
+  if (!Engine.isReady() || Engine.isLost()) return;
+  var lowMem = (navigator.deviceMemory || 8) <= 4;
+  var dprCap = preview ? 0.65 : (lowMem ? 0.75 : 0.85);
   var dpr = Math.min(window.devicePixelRatio || 1, dprCap);
-  Engine.setSize(2 * Math.round(w * dpr / 2), 2 * Math.round(h * dpr / 2));
+  var bufW = 2 * Math.round(w * dpr / 2);
+  var bufH = 2 * Math.round(h * dpr / 2);
+  if (stage.bufW === bufW && stage.bufH === bufH) {
+    updateMeta();
+    return;
+  }
+  stage.bufW = bufW;
+  stage.bufH = bufH;
+  Engine.setSize(bufW, bufH);
   updateMeta();
+}
+
+function onStageResize() {
+  clearTimeout(stage.resizeTimer);
+  stage.resizeTimer = setTimeout(function () {
+    fitCanvas(false);
+  }, 250);
+}
+
+function detachStageResize() {
+  if (stage.resizeObs) {
+    stage.resizeObs.disconnect();
+    stage.resizeObs = null;
+  }
+  clearTimeout(stage.resizeTimer);
 }
 
 function setPlayingUI(v) {
@@ -585,34 +618,6 @@ function setPlayingUI(v) {
 }
 
 /* ---------------- boot ---------------- */
-
-function runIntro() {
-  var items = [];
-  document.querySelectorAll(".brand, .segmented button, .topbar-actions > *").forEach(function (n) {
-    items.push(n);
-  });
-  items.push(document.getElementById("canvas-shell"));
-  items.push(document.querySelector(".stage-meta"));
-  document.querySelectorAll(".rail-section").forEach(function (n) { items.push(n); });
-  document.querySelectorAll(".mode-grid > *, .export-grid > *").forEach(function (n) { items.push(n); });
-
-  var d = 0;
-  items.forEach(function (n, i) {
-    if (!n) return;
-    d += i < 10 ? 40 : 24;
-    n.classList.add("stagger-item");
-    n.style.setProperty("--intro-d", Math.min(d, 820) + "ms");
-  });
-  document.body.classList.add("intro");
-  setTimeout(function () {
-    document.body.classList.remove("intro");
-    items.forEach(function (n) {
-      if (!n) return;
-      n.classList.remove("stagger-item");
-      n.style.removeProperty("--intro-d");
-    });
-  }, 1500);
-}
 
 function wireControls() {
   var segRefresh = UI.segmented(
@@ -645,57 +650,75 @@ function wireControls() {
   });
 }
 
-function showBootError(msg) {
-  document.body.classList.remove("booting");
-  document.querySelector(".canvas-frame").innerHTML =
-    '<div style="color:#9b9ba4;font-size:13px;max-width:380px;text-align:center;line-height:1.6">' +
-    "WebGL2 is required. Please use a recent Chrome, Edge or Firefox.<br><span style=\"color:#5e5e68;font-size:11px\">" +
-    String(msg).split("\n")[0] + "</span></div>";
+function showStageError(msg) {
+  var el = document.getElementById("stage-error");
+  if (!el) return;
+  el.innerHTML =
+    "WebGL2 is required. Please use a recent Chrome, Edge or Firefox.<br>" +
+    '<span style="color:#5e5e68;font-size:11px">' + String(msg).split("\n")[0] + "</span>";
+  el.hidden = false;
 }
 
-function finishBoot(opts) {
+function showBootError(msg) {
+  stage.failed = true;
+  detachStageResize();
+  Engine.suspend();
   document.body.classList.remove("booting");
-  document.body.classList.add("ready");
-  Engine.start();
-  if (opts.intro) runIntro();
-  setTimeout(function () { fitCanvas(false); }, 1400);
+  document.body.classList.remove("ready");
+  showStageError(msg);
+}
+
+function onContextLost() {
+  stage.failed = true;
+  detachStageResize();
+  Engine.suspend();
+  document.body.classList.remove("ready");
+  showStageError("WebGL context lost. Reload the page.");
+  UI.toast("WebGL context lost. Reload the page.");
 }
 
 document.addEventListener("DOMContentLoaded", function () {
   var canvas = document.getElementById("view");
+  if (!canvas) return;
+
   var lowPower = (navigator.hardwareConcurrency || 8) <= 4 ||
     ((navigator.deviceMemory || 8) <= 4);
-  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  document.addEventListener("visibilitychange", function () {
+    if (stage.failed) return;
+    if (document.hidden) Engine.suspend();
+    else if (Engine.isReady() && !Engine.isLost()) Engine.resume();
+  });
+
+  /* show UI shell immediately; the shader compiles on a driver
+     thread (KHR_parallel_shader_compile) and onReady fires when done,
+     so the page never freezes during boot. */
+  fitCanvas(true);
+  buildRail();
+  wireControls();
 
   requestAnimationFrame(function () {
-    fitCanvas(true);
-    buildRail();
-    wireControls();
+    Engine.init(canvas, function () { return P; }, {
+      autostart: false,
+      onContextLost: onContextLost,
+      onError: showBootError,
+      onReady: function () {
+        Engine.setMaxFps(lowPower ? 30 : 45);
 
-    var hash = decodeURIComponent(location.hash.slice(1) || "");
-    if (hash.indexOf("LMN1.") === 0 && decodeDesign(hash)) {
-      UI.toast("Shared design loaded");
-    }
+        var hash = decodeURIComponent(location.hash.slice(1) || "");
+        if (hash.indexOf("LMN1.") === 0 && decodeDesign(hash)) {
+          UI.toast("Shared design loaded");
+        }
 
-    new ResizeObserver(function () {
-      fitCanvas(!document.body.classList.contains("ready"));
-    }).observe(document.getElementById("canvas-frame"));
+        fitCanvas(false);
+        stage.resizeObs = new ResizeObserver(onStageResize);
+        stage.resizeObs.observe(document.getElementById("canvas-frame"));
 
-    requestAnimationFrame(function () {
-      try {
-        Engine.init(canvas, function () { return P; }, { autostart: false });
-      } catch (e) {
-        showBootError(e.message);
-        return;
-      }
-
-      fitCanvas(true);
-      Engine.renderAt(0);
-
-      requestAnimationFrame(function () {
-        finishBoot({ intro: !lowPower && !reduceMotion });
+        document.body.classList.remove("booting");
+        document.body.classList.add("ready");
+        Engine.start();
         updateMeta();
-      });
+      }
     });
   });
 });
