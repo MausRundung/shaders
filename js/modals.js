@@ -73,8 +73,58 @@ var Modals = (function () {
   }
 
   function openExport(kind) {
-    var titles = { png: "Export image", video: "Export video", gif: "Export GIF" };
+    var titles = { png: "Export image", video: "Export video", gif: "Export GIF", code: "Export WebGL Code" };
     var body = open(titles[kind], MODES[P.mode].full + " \u00b7 seed " + Math.round(P.seed));
+
+    if (kind === "code") {
+      var note = el("div", "modal-note", body);
+      note.textContent = "Get the complete HTML/GLSL boilerplate for this design. No dependencies, ready to run or integrate.";
+      
+      var actions = el("div", "modal-actions", body);
+      var copyBtn = el("button", "btn modal-dl", actions);
+      copyBtn.innerHTML = '<svg viewBox="0 0 16 16"><path d="M5 4 H11 A2 2 0 0 1 13 6 V12 A2 2 0 0 1 11 14 H5 A2 2 0 0 1 3 12 V6 A2 2 0 0 1 5 4 Z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 4 V3 A2 2 0 0 1 9 1 H13 A2 2 0 0 1 15 3 V9 A2 2 0 0 1 13 11 H12" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>Copy to Clipboard';
+      
+      var dl = el("button", "btn btn-primary modal-dl", actions);
+      dl.innerHTML = '<svg viewBox="0 0 16 16"><path d="M8 2 V10 M4.5 7 L8 10.5 L11.5 7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 13.5 H13" stroke="currentColor" stroke-width="1.6"/></svg>Download HTML';
+      
+      var codeString = Exporter.getCodeString(P);
+      
+      copyBtn.addEventListener("click", function() {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(codeString).then(function() {
+            if (typeof UI !== "undefined" && UI.toast) UI.toast("Code copied to clipboard!");
+            close();
+          }).catch(function() {
+            fallbackCopy(codeString);
+          });
+        } else {
+          fallbackCopy(codeString);
+        }
+      });
+      
+      function fallbackCopy(text) {
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "absolute";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand("copy");
+          if (typeof UI !== "undefined" && UI.toast) UI.toast("Code copied to clipboard!");
+          close();
+        } catch(e) {
+          if (typeof UI !== "undefined" && UI.toast) UI.toast("Clipboard copy failed");
+        }
+        document.body.removeChild(ta);
+      }
+      
+      dl.addEventListener("click", function () {
+        close();
+        Exporter.exportCode(P);
+      });
+      return;
+    }
 
     /* live preview */
     var prevWrap = el("div", "modal-preview", body);

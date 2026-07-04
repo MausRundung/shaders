@@ -832,7 +832,7 @@ select { cursor: pointer; appearance: none; padding-right: 22px;
   line-height: 1.55;
   margin-bottom: 14px;
 }
-.modal-actions { display: flex; justify-content: flex-end; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .modal-dl { height: 38px; padding: 0 18px; font-size: 13px; }
 .modal-dl svg { width: 14px; height: 14px; }
 .modal-dl:disabled { opacity: 0.55; pointer-events: none; }

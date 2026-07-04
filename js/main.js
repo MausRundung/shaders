@@ -540,6 +540,9 @@ function buildRail() {
   UI.exportButton(grid, "Looping GIF", "GIF",
     '<svg viewBox="0 0 16 16"><path d="M13.5 8 a5.5 5.5 0 1 1 -1.6 -3.9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13.8 1.6 V4.4 H11" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
     function () { Modals.openExport("gif"); });
+  UI.exportButton(grid, "Code", "HTML",
+    '<svg viewBox="0 0 16 16"><path d="M5 4 L2 8 L5 12 M11 4 L14 8 L11 12 M9 2 L7 14" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
+    function () { Modals.openExport("code"); });
   UI.exportButton(grid, "Gradient set", "ZIP",
     '<svg viewBox="0 0 16 16"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="5.5" height="5.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
     function () { Modals.openSetGenerator(); });
@@ -639,6 +642,7 @@ function wireControls() {
   document.getElementById("btn-export-png").addEventListener("click", function () { Modals.openExport("png"); });
   document.getElementById("btn-export-video").addEventListener("click", function () { Modals.openExport("video"); });
   document.getElementById("btn-export-gif").addEventListener("click", function () { Modals.openExport("gif"); });
+  document.getElementById("btn-export-code").addEventListener("click", function () { Modals.openExport("code"); });
   document.getElementById("btn-set").addEventListener("click", function () { Modals.openSetGenerator(); });
 
   document.addEventListener("keydown", function (e) {
